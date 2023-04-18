@@ -14,7 +14,9 @@ await faceapi.nets.ssdMobilenetv1.loadFromDisk(MODEL_URL);
 await faceapi.nets.faceLandmark68Net.loadFromDisk(MODEL_URL);
 await faceapi.nets.faceRecognitionNet.loadFromDisk(MODEL_URL);
 
-const TRAIN_FOLDER = "./train";
+const TRAIN_DIR = "./train";
+const FIND_DIR = "./find";
+const MATCHERS_DIR = "./matchers";
 
 function image(img) {
     const buffer = fs.readFileSync(img);
@@ -26,55 +28,66 @@ function image(img) {
     return result;
 }
 
-async function trainModel() {
-    // Lee las subcarpetas en la carpeta "caras"
-    const folders = fs.readdirSync(TRAIN_FOLDER);
+async function trainModel(tenant) {
+    // Lee las subcarpetas en la carpeta de "./train/{tenant}"
+    let tenantFolder = path.join(TRAIN_DIR, tenant);
+    const folders = fs.readdirSync(tenantFolder);
+
     // Crea un array de objetos con la ruta de cada foto y el nombre de la carpeta correspondiente
-    const labeledDescriptors = folders.map((folderName) => {
-        const personPath = path.join(TRAIN_FOLDER, folderName);
-        const faceDescriptors = fs
-            .readdirSync(personPath)
-            .filter(
-                (fileName) =>
-                    path.extname(fileName) === "jpeg" ||
-                    path.extname(fileName) === ".png" ||
-                    path.extname(fileName) === ".jpg"
-            )
-            .map(async (personPicture) => {
-                const img = image(path.join(personPath, personPicture));
-                const faceTensor = await faceapi
-                    .detectSingleFace(img)
-                    .withFaceLandmarks()
-                    .withFaceDescriptor();
-                const faceDescriptor = faceTensor.descriptor;
-                console.info(faceDescriptor);
-                return faceDescriptor;
-            });
-        console.info(faceDescriptors);
-        // return new faceapi.LabeledFaceDescriptors(folderName, faceDescriptors);
-    });
+    const labeledDescriptors = await Promise.all(
+        folders.map(async (folderName) => {
+            const personPath = path.join(tenantFolder, folderName);
+            const faceDescriptors = await Promise.all(
+                fs
+                    .readdirSync(personPath)
+                    .filter(
+                        (fileName) =>
+                            path.extname(fileName) === "jpeg" ||
+                            path.extname(fileName) === ".png" ||
+                            path.extname(fileName) === ".jpg"
+                    )
+                    .map(async (personPicture) => {
+                        const img = image(path.join(personPath, personPicture));
+                        const faceTensor = await faceapi
+                            .detectSingleFace(img)
+                            .withFaceLandmarks()
+                            .withFaceDescriptor();
+                        const faceDescriptor = faceTensor.descriptor;
+                        console.info(faceDescriptor);
+                        return faceDescriptor;
+                    })
+            );
+            console.info(faceDescriptors);
+            return new faceapi.LabeledFaceDescriptors(
+                folderName,
+                faceDescriptors
+            );
+        })
+    );
     // Entrena el modelo con los datos de las fotos etiquetadas
-    // console.info(await labeledDescriptors);
-    // const faceMatcher = new faceapi.FaceMatcher(await labeledDescriptors[0]);
-
-    // console.log(faceMatcher);
-    // Serializa el modelo entrenado en un archivo
-    // fs.writeFileSync("faceMatcher.json", JSON.stringify(faceMatcher));
-
-    // return faceMatcher;
-}
-
-async function recognizeFaces() {
-    // Carga el modelo entrenado desde el archivo
-    const faceMatcherJson = fs.readFileSync("faceMatcher.json");
-    const labeledDescriptors = JSON.parse(faceMatcherJson);
+    console.info(labeledDescriptors);
     const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors);
 
-    // Lee las fotos que quieres reconocer
+    // Serializa el modelo entrenado en un archivo
+    let tenantFile = path.join(MATCHERS_DIR, `${tenant}_matcher.json`);
+    fs.writeFileSync(tenantFile, JSON.stringify(faceMatcher));
+
+    // Por si lo usamos de manera secuencial despues
+    return faceMatcher;
+}
+
+async function recognizeFaces(tenant) {
+    // Carga el modelo entrenado desde el archivo
+    let tenantFile = path.join(MATCHERS_DIR, `${tenant}_matcher.json`);
+    const faceMatcherJson = fs.readFileSync(tenantFile);
+    const faceMatcherParsed = JSON.parse(faceMatcherJson);
+    const faceMatcher = new faceapi.FaceMatcher.fromJSON(faceMatcherParsed);
+
+    // // Lee las fotos que quieres reconocer
     const images = fs
-        .readdirSync("./reconocer")
+        .readdirSync(FIND_DIR)
         .filter((fileName) => path.extname(fileName) === ".jpg")
-        .map((fileName) => canvas.loadImage(`./reconocer/${fileName}`));
+        .map((fileName) => image(path.join(FIND_DIR, fileName)));
 
     // Reconoce las caras en las fotos
     const results = await Promise.all(
@@ -98,4 +111,5 @@ async function recognizeFaces() {
     });
 }
 
-trainModel();
+const trained = await trainModel("paxapos");
+recognizeFaces("paxapos");
