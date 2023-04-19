@@ -1,5 +1,5 @@
 import * as tf from "@tensorflow/tfjs-node";
-import * as faceapi from "face-api.js";
+import * as faceapi from "@vladmandic/face-api";
 import fs from "fs";
 import path from "path";
 
@@ -36,13 +36,14 @@ async function trainModel(tenant) {
     // Crea un array de objetos con la ruta de cada foto y el nombre de la carpeta correspondiente
     const labeledDescriptors = await Promise.all(
         folders.map(async (folderName) => {
+            console.log(folderName);
             const personPath = path.join(tenantFolder, folderName);
             const faceDescriptors = await Promise.all(
                 fs
                     .readdirSync(personPath)
                     .filter(
                         (fileName) =>
-                            path.extname(fileName) === "jpeg" ||
+                            path.extname(fileName) === ".jpeg" ||
                             path.extname(fileName) === ".png" ||
                             path.extname(fileName) === ".jpg"
                     )
@@ -69,7 +70,7 @@ async function trainModel(tenant) {
     const faceMatcher = new faceapi.FaceMatcher(labeledDescriptors);
 
     // Serializa el modelo entrenado en un archivo
-    let tenantFile = path.join(MATCHERS_DIR, `${tenant}_matcher.json`);
+    let tenantFile = path.join(MATCHERS_DIR, `${tenant}.json`);
     fs.writeFileSync(tenantFile, JSON.stringify(faceMatcher));
 
     // Por si lo usamos de manera secuencial despues
@@ -78,15 +79,20 @@ async function trainModel(tenant) {
 
 async function recognizeFaces(tenant) {
     // Carga el modelo entrenado desde el archivo
-    let tenantFile = path.join(MATCHERS_DIR, `${tenant}_matcher.json`);
+    let tenantFile = path.join(MATCHERS_DIR, `${tenant}.json`);
     const faceMatcherJson = fs.readFileSync(tenantFile);
     const faceMatcherParsed = JSON.parse(faceMatcherJson);
-    const faceMatcher = new faceapi.FaceMatcher.fromJSON(faceMatcherParsed);
+    const faceMatcher = faceapi.FaceMatcher.fromJSON(faceMatcherParsed);
 
     // // Lee las fotos que quieres reconocer
     const images = fs
         .readdirSync(FIND_DIR)
-        .filter((fileName) => path.extname(fileName) === ".jpg")
+        .filter(
+            (fileName) =>
+                path.extname(fileName) === ".jpeg" ||
+                path.extname(fileName) === ".png" ||
+                path.extname(fileName) === ".jpg"
+        )
         .map((fileName) => image(path.join(FIND_DIR, fileName)));
 
     // Reconoce las caras en las fotos
@@ -111,5 +117,5 @@ async function recognizeFaces(tenant) {
     });
 }
 
-const trained = await trainModel("paxapos");
-recognizeFaces("paxapos");
+const trained = await trainModel("uejn");
+//recognizeFaces("uejn");
